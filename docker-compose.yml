@@ -1,0 +1,41 @@
+services:
+  frontend:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:3000"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    user: "${UID}:${GID}"
+    command: bash -c "npm install || true && tail -f /dev/null"
+
+  backend:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=1234
+      - DB_NAME=appdb
+    depends_on:
+      - db
+    user: "${UID}:${GID}"
+    command: bash -c "npm install || true && tail -f /dev/null"
+
+  db:
+    image: mariadb:11
+    restart: always
+    environment:
+      - MARIADB_ROOT_PASSWORD=1234
+      - MARIADB_DATABASE=appdb
+    volumes:
+      - ./db_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
