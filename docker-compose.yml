@@ -8,7 +8,7 @@ services:
       - "3000:3000"
     environment:
       - CHOKIDAR_USEPOLLING=true
-    user: "${UID}:${GID}"
+    user: "${UID:-0}:${GID:-0}"
     command: bash -c "npm install || true && tail -f /dev/null"
 
   backend:
@@ -26,7 +26,7 @@ services:
       - DB_NAME=appdb
     depends_on:
       - db
-    user: "${UID}:${GID}"
+    user: "${UID:-0}:${GID:-0}"
     command: bash -c "npm install || true && tail -f /dev/null"
 
   db:
