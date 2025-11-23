@@ -13,13 +13,31 @@ const JWT_SECRET = process.env.JWT_SECRET_API;
 if (!JWT_SECRET) {
   throw new Error('Falta JWT_SECRET_API en el archivo .env');
 }
-
-/* ============================================================
-   REGISTRO DE USUARIO
-   Campos esperados: email, password
-   Tabla: usuarios (email, password)
-============================================================ */
-
+/**
+ * Registra un nuevo usuario en la base de datos.
+ *
+ * @function registerUser
+ * @async
+ * @param {Request} req - Objeto Request de Express. Debe contener en req.body los campos:
+ * @param {string} req.body.email - Email del usuario a registrar.
+ * @param {string} req.body.password - Contraseña del usuario.
+ *
+ * @param {Response} res - Objeto Response de Express usado para enviar la respuesta al cliente.
+ *
+ * @returns {Promise<void>} No retorna nada directamente. Responde al cliente con:
+ * - 201 si el usuario fue registrado con éxito.
+ * - 400 si faltan campos.
+ * - 409 si el email ya existe.
+ * - 500 si ocurre un error interno.
+ *
+ * @description
+ * Esta función:
+ * 1. Valida que email y contraseña estén presentes.
+ * 2. Verifica si el usuario ya existe.
+ * 3. Hashea la contraseña con bcrypt.
+ * 4. Inserta el usuario en la tabla `usuarios`.
+ * 5. Devuelve un mensaje JSON según el resultado.
+ */
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;
 
@@ -29,40 +47,56 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
   }
 
   try {
-    // ¿El usuario ya existe?
-    const [existingUser] = await pool.query<UserRow[]>(
-      'SELECT idUsuario FROM usuarios WHERE email = ? LIMIT 1',
-      [email]
-    );
-
-    if (Array.isArray(existingUser) && existingUser.length > 0) {
-      res.status(409).json({ message: 'El email ya está registrado' });
-      return;
-    }
-
     // Hashear contraseña
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insertar usuario
+    // Ejecutar el SP
     await pool.query(
-      'INSERT INTO usuarios (email, password) VALUES (?, ?)',
+      'CALL sp_registrar_usuario(?, ?)',
       [email, hashedPassword]
     );
 
     res.status(201).json({ message: 'Usuario registrado con éxito' });
 
-  } catch (error) {
+  } catch (error: any) {
+
+    // Mensaje que envía tu SP
+    if (error.message.includes('El correo ya está registrado')) {
+      res.status(409).json({ message: 'El email ya está registrado' });
+      return;
+    }
+
     console.error('Error en registerUser:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };
 
 
-/* ============================================================
-   LOGIN DE USUARIO
-   Campos esperados: email, password
-============================================================ */
-
+/**
+ * Inicia sesión para un usuario existente.
+ *
+ * @function loginUser
+ * @async
+ * @param {Request} req - Objeto Request de Express. Debe contener en req.body:
+ * @param {string} req.body.email - Email del usuario.
+ * @param {string} req.body.password - Contraseña del usuario.
+ *
+ * @param {Response} res - Objeto Response de Express usado para enviar la respuesta al cliente.
+ *
+ * @returns {Promise<void>} No retorna nada directamente. Envía:
+ * - 200 con el token JWT si las credenciales son correctas.
+ * - 400 si faltan campos.
+ * - 401 si las credenciales son inválidas.
+ * - 500 si ocurre un error interno.
+ *
+ * @description
+ * Esta función:
+ * 1. Valida email y contraseña.
+ * 2. Busca el usuario por email.
+ * 3. Compara la contraseña usando bcrypt.
+ * 4. Genera un token JWT con expiración de 1 hora.
+ * 5. Devuelve el token en un JSON.
+ */
 export const loginUser = async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;
 
@@ -72,21 +106,31 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    // Buscar usuario
-    const [rows] = await pool.query<UserRow[]>(
-      'SELECT idUsuario, password FROM usuarios WHERE email = ? LIMIT 1',
+    // Llamar al stored procedure
+    const [rows] = await pool.query<any[]>(
+      'CALL sp_buscar_usuario_por_email(?)',
       [email]
     );
 
-    const data = Array.isArray(rows) ? rows[0] : undefined;
+    /**
+     * IMPORTANTE:
+     * Cuando CALL se usa en MySQL/MariaDB, el resultado llega como:
+     * [
+     *   [ { idUsuario, email, password }, ... ],  <-- primer recordset
+     *   { ... metadata ... }
+     * ]
+     *
+     * Por eso rows[0][0] es el usuario real.
+     */
+    const user = rows[0][0];
 
-    if (!data) {
+    if (!user) {
       res.status(401).json({ message: 'Credenciales inválidas' });
       return;
     }
 
     // Comparar contraseña
-    const passwordIsValid = await bcrypt.compare(password, data.password);
+    const passwordIsValid = await bcrypt.compare(password, user.password);
     if (!passwordIsValid) {
       res.status(401).json({ message: 'Credenciales inválidas' });
       return;
@@ -94,7 +138,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     // Crear token
     const token = jwt.sign(
-      { idUsuario: data.idUsuario, email },
+      { idUsuario: user.idUsuario, email: user.email },
       JWT_SECRET,
       { expiresIn: '1h' }
     );
@@ -106,3 +150,4 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 };
+

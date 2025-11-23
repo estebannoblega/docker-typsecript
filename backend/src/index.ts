@@ -16,11 +16,11 @@ app.use(express.json());
 
 // Rutas
 app.use('/api/users',userRoutes);
-app.use('/api/protected/', protectedWelcome);
+app.use('/api/pr', protectedWelcome);
 
 
 //Configuración del puerto
-const PORT = process.env.PORT_API || 5000
+const PORT = process.env.PORT_API || 5050
 
 
 //Puesta en marcha del server
