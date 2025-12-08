@@ -225,3 +225,82 @@ select year(paymentdate), sum(amount) from payments group by year(paymentdate);
 
 
 --1
+SELECT c.customerName
+FROM customers c
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM productlines pl
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM orders o
+        JOIN orderdetails od ON o.orderNumber = od.orderNumber
+        JOIN products p ON od.productCode = p.productCode
+        WHERE o.customerNumber = c.customerNumber
+          AND p.productLine = pl.productLine
+    )
+);
+
+
+--2
+select e.employeenumber,concat(e.lastname,', ',e.firstname) as nombre, sum(od.priceeach*od.quantityordered) as total from employees as e inner join customers as c on e.employeenumber=c.salesrepemployeenumber inner join orders as o on c.customernumber=o.customernumber inner join orderdetails as od on o.ordernumber=od.ordernumber group by e.employeenumber,nombre;
+
+--3
+select c.country,sum(p.amount) as totalPais from customers c join payments p on
+c.customernumber=p.customernumber group by c.country having totalPais > (select avg(amount) from payments);
+
+--4
+select p.productname, sum(od.quantityordered*od.priceeach) as totalvendido from
+products p join orderdetails od on p.productcode=od.productcode group by p.productname having totalvendido> (select avg(creditlimit) from customers);
+
+--5
+select o.ordernumber,c.customername, sum(od.priceeach*od.quantityordered) as totalPedido, ifnull(sum(p.amount),0) as totalPagado from orders o join customers c on o.customernumber=c.customernumber join orderdetails od on o.ordernumber=od.ordernumber left join payments p on c.customernumber=p.customernumber group by o.ordernumber,c.customername;
+
+--6
+select c.customername,concat(e.lastname,', ', e.firstname) as representante, o.country as paisoficina, c.country as paisCliente from customers c join employees e on c.salesrepemployeenumber=e.employeenumber join offices o on e.officecode=o.officecode where o.country<>c.country;
+
+--7
+select c.customername, sum(p.amount) as totalgastado from customers c inner join payments p on c.customernumber=p.customernumber group by c.customername order by totalgastado desc limit 4;
+
+--8
+select p.productcode,p.productname,sum(od.quantityordered) as totalvendido from
+products p join orderdetails od on p.productcode=od.productcode group by p.productcode,p.productname order by totalvendido asc limit 10;
+
+
+/**
+“Mostrame los clientes que, en total, pagaron menos dinero del que gastaron en pedidos.”
+*/
+SELECT 
+    c.customerName,
+    IFNULL(p.totalPagado, 0) AS pagado,
+    IFNULL(o.totalPedido, 0) AS pedido
+FROM customers c
+LEFT JOIN (
+    SELECT customerNumber, SUM(amount) AS totalPagado
+    FROM payments
+    GROUP BY customerNumber
+) p ON c.customerNumber = p.customerNumber
+LEFT JOIN (
+    SELECT o.customerNumber, SUM(od.quantityOrdered * od.priceEach) AS totalPedido
+    FROM orders o
+    JOIN orderdetails od ON o.orderNumber = od.orderNumber
+    GROUP BY o.customerNumber
+) o ON c.customerNumber = o.customerNumber
+WHERE IFNULL(p.totalPagado, 0) < IFNULL(o.totalPedido, 0);
+
+
+/*
+“Mostrame los productos que solo fueron vendidos a clientes cuyo creditLimit está por encima del promedio.”
+*/
+select p.productname from products p where not exists (select 1 from orderdetails od inner join orders o on od.ordernumber=o.ordernumber inner join customers c on o.customernumber=c.customernumber where od.productcode=p.productcode and c.creditlimit <= (select avg(creditlimit) from customers));
+
+
+/*
+“Mostrame los empleados cuyos clientes generan ventas por encima del promedio global de ventas.”
+*/
+set @promedio:=(select avg(total) from (select sum(od.quantityordered*od.priceeach) as total from orderdetails od inner join orders o on od.ordernumber=o.ordernumber inner join customers c on o.customernumber=c.customernumber group by c.customernumber) AS sub);
+
+select e.employeenumber,concat(e.lastname,', ',e.firstname) as empleado,sum(od.quantityordered*od.priceeach) as total from employees e inner join customers c on e.employeenumber=c.salesrepemployeenumber inner join orders o on c.customernumber=o.customernumber inner join orderdetails od on
+o.ordernumber=od.ordernumber group by e.employeenumber,empleado having total>@promedio;
+
+
+
